@@ -5,114 +5,117 @@
  * @format
  */
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useCallback, useEffect} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
-
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+  createNativeStackNavigator,
+} from '@react-navigation/native-stack';
+import {Home, Login} from './src/screens/index.screen';
+import StoreDetail from './src/screens/StoreDetail.screen';
+import {useAppSelector, useThunkDispatch} from './src/state/hooks';
+import auth, {FirebaseAuthTypes} from '@react-native-firebase/auth';
 import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+  endLoading,
+  fetchUser,
+  startLoading,
+  userLogout,
+} from './src/state/user/reducer';
+import LoadingScreen from './src/screens/Loading.screen';
+import {NavigationContainer} from '@react-navigation/native';
+import {IconButton} from 'react-native-paper';
+import {cleanRef, resetStore} from './src/state/store/reducer';
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+export type RootStackParamList = {
+  Home: undefined;
+  StoreDetail: {storeId: string};
+  Login: undefined;
+};
+type StackScreens = keyof RootStackParamList;
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+export type NavigationProps = NativeStackNavigationProp<
+  RootStackParamList,
+  StackScreens
+>;
+
+export type ScreenProps<ScreenName extends keyof RootStackParamList> =
+  NativeStackScreenProps<RootStackParamList, ScreenName>;
 
 function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  const Stack = createNativeStackNavigator<RootStackParamList>();
+  const user = useAppSelector(state => state.user);
+  const dispatch = useThunkDispatch();
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
-  };
+  function _renderLogoutBtn() {
+    return (
+      <IconButton
+        icon="power"
+        iconColor={'rgb(200,0,0)'}
+        size={30}
+        onPress={async () => {
+          try {
+            auth().signOut();
+            dispatch(userLogout());
+            dispatch(resetStore());
+            cleanRef();
+          } catch (error) {}
+        }}
+      />
+    );
+  }
+
+  const onAuthStateChanged = useCallback(
+    (userData: FirebaseAuthTypes.User | null) => {
+      console.log('userData', userData);
+
+      if (userData?.uid) {
+        dispatch(fetchUser(userData?.uid));
+      } else {
+        dispatch(endLoading());
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  useEffect(() => {
+    dispatch(startLoading());
+    const subscriber = auth().onAuthStateChanged(onAuthStateChanged);
+    return () => {
+      subscriber();
+      cleanRef();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onAuthStateChanged]);
+
+  if (user?.isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+    <NavigationContainer>
+      <Stack.Navigator>
+        {user?.id ? (
+          <>
+            <Stack.Screen
+              name="Home"
+              component={Home}
+              options={{
+                headerRight: _renderLogoutBtn,
+              }}
+            />
+            <Stack.Screen name="StoreDetail" component={StoreDetail} />
+          </>
+        ) : (
+          <Stack.Screen
+            name="Login"
+            component={Login}
+            options={{headerShown: false}}
+          />
+        )}
+      </Stack.Navigator>
+    </NavigationContainer>
   );
 }
-
-const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
-  },
-  highlight: {
-    fontWeight: '700',
-  },
-});
 
 export default App;
